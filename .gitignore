@@ -129,7 +129,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-july2024_demo__env/
+summer2024_demo_env/
 
 # Spyder project settings
 .spyderproject

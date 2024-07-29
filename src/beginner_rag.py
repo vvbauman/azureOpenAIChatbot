@@ -2,6 +2,11 @@ import os
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 
+def clear_env_vars():
+    for var in ["OAI_ENDPOINT", "OAI_KEY", "OAI_DEPLOYMENT", "API_VERSION", "SEARCH_ENDPOINT", "SEARCH_KEY", "SEARCH_INDEX", "MODEL_NAME"]:
+        os.environ.pop(var)
+    return
+
 def get_config():
     """
     Loads environment variables, 
@@ -14,6 +19,7 @@ def get_config():
     oai_deployment : str. Name of AzureOpenAI deployment (i.e., foundation model) used in oai_client
     data_source_config : dict. Data source/AI Search specifications, used with oai_client to ground responses 
     """
+    clear_env_vars()
     load_dotenv()
     # get environment variables (keys, endpoints, etc.)
     oai_endpoint = os.getenv("OAI_ENDPOINT")
@@ -74,10 +80,9 @@ def main():
         ]
 
     print("Welcome to the Contoso help chatbot!")
-        
-    # try:
+
     q= 0
-    while q <= max_questions:
+    while q < max_questions:
         # Get prompt from user
         text = input('\nEnter a question:\n')
 
@@ -108,7 +113,11 @@ def main():
             {"role": "assistant", "content": text_reply}
         )
         q += 1
+    
+    print("Thanks for chatting! Goodbye")
 
 if __name__ == '__main__': 
     main()
+
+# TODO: update improved_rag.py based on changes in this beginner_rag.py
 

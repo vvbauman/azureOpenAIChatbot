@@ -6,7 +6,6 @@
 # 2) for each user prompt, create an optimized search query for AI Search
 # 3) retrieve relevant docs from AI Search using the optimized search query
 # 4) create a content-specific answer and return to user using the search result and chat history
-# TODO - add "re-write question" stage?
 
 import os
 import json
@@ -89,7 +88,7 @@ def main():
     oai_client, search_client = get_config()
     system_message = """You are an assistant that summarizes document highlights retrieved from documents using Azure AI Search. You will receive the search query in double asterisks, for example, **eye exams**.
         You should start all responses with "this is what I know about **search query**". For example, for search query **eye exams**, your response will start as "This is what I know about eye exams".
-        Your responses should be 2-3 sentences and should include all key details without adding external information or assumptions. 
+        Your responses should be 3-4 sentences and should include all key details without adding external information or assumptions. 
         """
     temperature = 0.3 # response creativity (0-2, 0 being entirely factual and literal)
     max_tokens = 1000 # repsonse token limit. 1 token ~= 4 characters
@@ -110,7 +109,7 @@ def main():
         If you cannot generate a search query, return just the number 0.
         """   
     
-    query_resp_token_limit = 100 # max tokens to create optimized search query
+    query_resp_token_limit = 50 # max tokens to create optimized search query
     
     # define tools used to build messages to get optimized search query - see https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools
     # this has good examples on how tools are used too: https://cookbook.openai.com/examples/how_to_call_functions_with_chat_models
@@ -135,6 +134,8 @@ def main():
     ]
 
     q = 0
+    messages = []
+    print("Welcome to the Contoso help chatbot!")
     while q < max_questions: # STEP 1) Facilitate a 3-turn conversation
 
         # Get prompt from user
@@ -146,8 +147,7 @@ def main():
             model = model_name, # need openAI-friendly name here
             system_prompt = query_prompt_template,
             tools = tools,
-            past_messages = [] if q == 0 else messages[:-1], # TODO: figure out how this works for the first turn
-            # user_request_query = "Generate search query for: " + text, # not a valid argument for this method
+            past_messages = [] if q == 0 else messages[1:-1],
             new_user_content = "Generate search query for: " + text,
             max_tokens = model_token_limit - query_resp_token_limit,
         )       
@@ -161,7 +161,7 @@ def main():
             tools = tools,
         )
 
-        query_text = get_search_query(chat_completion=chat_completion, user_query=text) #"eye_exam"
+        query_text = get_search_query(chat_completion=chat_completion, user_query=text) 
 
         # STEP 3) Retrieve documents from AI Search using the optimized query
         search_results = search_client.search(
@@ -189,7 +189,7 @@ def main():
         messages = build_messages(
             model=model_name,
             system_prompt=system_message,
-            past_messages= [] if q == 0 else messages[:-1],
+            past_messages=[] if q == 0 else messages[1:-1],
             new_user_content=f"**{query_text}**" + " ".join([e for d in docs for e in d.highlight["content"]]),
             max_tokens=model_token_limit - 1024,
         )
@@ -203,11 +203,9 @@ def main():
             n=1,
         )
         display_chat = chat_reply.choices[0].message.content + "\n"
-        print("Response: " + display_chat + "\n")
+        print("Response: " + display_chat + "\n") 
 
-        # # TODO: double-check the object type of chat_reply and whether it makes sense to append to messages
-        # messages.append(chat_reply)
-        messages = []
+        # maintain conversation history
         messages.append(messages)
         q += 1
     
@@ -220,5 +218,6 @@ if __name__ == '__main__':
 
 
 
-        
+# TODO:
+# clean up, add variables, break up main() into functions. Test enabling field in AI search to retrieve citations
 

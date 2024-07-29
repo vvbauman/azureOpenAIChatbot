@@ -13,7 +13,7 @@ import json
 from dotenv import load_dotenv
 from dataclasses import dataclass
 from openai import AzureOpenAI
-from typing import List, Optional
+from typing import List, Optional, Any
 # from azure.search.documents.aio import SearchClient
 from azure.search.documents import SearchClient
 from openai.types.chat import (
@@ -27,6 +27,7 @@ class Doc:
     """Class for keeping track of docs retrieved from AI Search"""
     content: Optional[str]
     score: Optional[float] = None
+    highlight: Optional[list[Any]] = None
 
 def clear_env_vars():
     for var in ["OAI_ENDPOINT", "OAI_KEY", "OAI_DEPLOYMENT", "API_VERSION", "SEARCH_ENDPOINT", "SEARCH_KEY", "SEARCH_INDEX"]: #, "MODEL_NAME"]:
@@ -86,11 +87,14 @@ def get_search_query(chat_completion: ChatCompletion, user_query: str):
 def main():
     # get OpenAI client and specify some chat completion parameters, same as before
     oai_client, search_client = get_config()
-    system_message = """Assistant helps the company employees with their healthcare plan questions, and questions about the employee handbook. Be brief in your answers.
+    system_message1 = """Assistant helps the company employees with their healthcare plan questions, and questions about the employee handbook. Be brief in your answers.
         Answer ONLY with the facts listed in the list of sources below. If there isn't enough information below, say you don't know. 
         Do not generate answers that don't use the sources below. If asking a clarifying question to the user would help, ask the question.
         Each source has a name followed by colon and the actual information, always include the source name for each fact you use in the response. Use square brackets to reference the source, for example [info1.txt]. 
         Don't combine sources, list each source separately, for example [info1.txt][info2.pdf].
+        """
+    system_message = """You are an assistant that summarizes document highlights retrieved from documents using Azure AI Search. Your responses should be 2-3 sentences and should include
+        all key details without adding external information or assumptions.
         """
     temperature = 0.3 # response creativity (0-2, 0 being entirely factual and literal)
     max_tokens = 1000 # repsonse token limit. 1 token ~= 4 characters
@@ -100,6 +104,7 @@ def main():
     deployment_name = os.getenv("OAI_DEPLOYMENT")
     model_name = "gpt-3.5-turbo"
     model_token_limit = get_token_limit(model=model_name)
+    print("DEPLOYMENT", deployment_name)
 
     # create the prompt we'll use to create the optimized search query
     query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base.
@@ -108,9 +113,11 @@ def main():
         Do not include cited source filenames and document names e.g info.txt or doc.pdf in the search query terms.
         Do not include any text inside [] or <<>> in the search query terms.
         Do not include any special characters like '+'.
-        If the question is not in English, translate the question to English before generating the search query.
         If you cannot generate a search query, return just the number 0.
         """   
+    summarize_prompt_template = """Summarize the following text into 2-3 sentences, ensuring to include all key details without 
+        adding any external information or assumptions.
+        """
     query_resp_token_limit = 100 # max tokens to create optimized search query
     
     # define tools used to build messages to get optimized search query - see https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools
@@ -163,14 +170,15 @@ def main():
         #     tools = tools,
         # )
 
-        query_text = "eye exam benefits" #get_search_query(chat_completion=chat_completion, user_query=text)
+        query_text = "eye exam" #get_search_query(chat_completion=chat_completion, user_query=text)
         print("QUERY TEXT", query_text)
 
         # STEP 3) Retrieve documents from AI Search using the optimized query
         search_results = search_client.search(
             search_text=query_text, # optimized search query we created before
-            top=1, # number of search results to retrieve
+            top=2, # number of search results to retrieve
             query_type="simple",
+            highlight_fields="content",
             )
 
         docs = []
@@ -179,12 +187,13 @@ def main():
                 docs.append(
                     Doc(
                         content=doc.get("content"),
-                        score=doc.get("@search.score")
+                        score=doc.get("@search.score"),
+                        highlight=doc.get("@search.highlights")
+                        # need to retrieve citation too
                     )
                 )
+        print("DOC HIGHLIGHT", [e for d in docs for e in d.highlight["content"]]) 
 
-        # STEP 3.5) Summarize the search results so meet our token limits
-        
 
         # STEP 4) Create content-specific answer using the search results and chat history
         # create messages to send to OpenAI model to generate the response
@@ -193,19 +202,18 @@ def main():
             model=model_name,
             system_prompt=system_message,
             past_messages= [] if q == 0 else messages[:-1],
-            new_user_content=text + " ".join([d.content for d in docs]),
-            max_tokens=model_token_limit - 5000,
+            new_user_content=text + " ".join([e for d in docs for e in d.highlight["content"]]),
+            max_tokens=model_token_limit - 1024,
         )
-        print("messages", messages)
+    
 
         # create and print response
         chat_reply = oai_client.chat.completions.create(
             model=deployment_name,
             messages=messages,
             temperature=temperature,
-            max_tokens=max_tokens,
+            # max_tokens=max_tokens,
             n=1,
-            stream=True,
         )
         display_chat = chat_reply.choices[0].message.content + "\n"
         print("Response: " + display_chat + "\n")

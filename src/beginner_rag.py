@@ -19,7 +19,7 @@ def get_config():
     oai_deployment : str. Name of AzureOpenAI deployment (i.e., foundation model) used in oai_client
     data_source_config : dict. Data source/AI Search specifications, used with oai_client to ground responses 
     """
-    clear_env_vars()
+    # clear_env_vars()
     load_dotenv()
     # get environment variables (keys, endpoints, etc.)
     oai_endpoint = os.getenv("OAI_ENDPOINT")

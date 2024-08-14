@@ -3,9 +3,9 @@
 # goal of this script is to provide starter code on using some of the libraries in this linked repo (stepping stone to chatreadretrieveread.py)
 # steps we'll accomplish:
 # 1) facilitate a 3-turn conversation between chatbot and user
-# 2) for each user prompt, create an optimized search query for AI Search
+# 2) for each user prompt, create an optimized search query for AI Search (makes a call to model)
 # 3) retrieve relevant docs from AI Search using the optimized search query
-# 4) create a content-specific answer and return to user using the search result and chat history
+# 4) create a content-specific answer and return to user using the search result and chat history (makes a call to model)
 
 import os
 import json
@@ -29,17 +29,16 @@ class Doc:
     highlight: Optional[list[Any]] = None
 
 def clear_env_vars():
-    for var in ["OAI_ENDPOINT", "OAI_KEY", "OAI_DEPLOYMENT", "API_VERSION", "SEARCH_ENDPOINT", "SEARCH_KEY", "SEARCH_INDEX"]: #, "MODEL_NAME"]:
+    for var in ["OAI_ENDPOINT", "OAI_KEY", "OAI_DEPLOYMENT", "API_VERSION", "SEARCH_ENDPOINT", "SEARCH_KEY", "SEARCH_INDEX", "MODEL_NAME"]:
         os.environ.pop(var)
     return
 
 def get_config():
-    clear_env_vars()
+    clear_env_vars() # run this if env variables have already been set
     load_dotenv()
     # get environment variables (keys, endpoints, etc.)
     oai_endpoint = os.getenv("OAI_ENDPOINT")
     oai_key = os.getenv("OAI_KEY")
-    oai_deployment = os.getenv("OAI_DEPLOYMENT")
     api_version = os.getenv("API_VERSION")
     search_endpoint = os.getenv("SEARCH_ENDPOINT")
     search_key = os.getenv("SEARCH_KEY")
@@ -86,20 +85,8 @@ def get_search_query(chat_completion: ChatCompletion, user_query: str):
 def main():
     # get OpenAI client and specify some chat completion parameters, same as before
     oai_client, search_client = get_config()
-    system_message = """You are an assistant that summarizes document highlights retrieved from documents using Azure AI Search. You will receive the search query in double asterisks, for example, **eye exams**.
-        You should start all responses with "this is what I know about **search query**". For example, for search query **eye exams**, your response will start as "This is what I know about eye exams".
-        Your responses should be 3-4 sentences and should include all key details without adding external information or assumptions. 
-        """
-    temperature = 0.3 # response creativity (0-2, 0 being entirely factual and literal)
-    max_tokens = 1000 # repsonse token limit. 1 token ~= 4 characters
-    max_questions = 3 # max turns the conversation has before program exits
 
-    # get the token limit for the model we've deployed - see https://github.com/pamelafox/openai-messages-token-helper/blob/main/src/openai_messages_token_helper/model_helper.py
-    deployment_name = os.getenv("OAI_DEPLOYMENT")
-    model_name = os.getenv("MODEL_NAME")
-    model_token_limit = get_token_limit(model=model_name)
-
-    # create the prompt we'll use to create the optimized search query
+    # define the prompt we'll use to create the optimized search query
     query_prompt_template = """Below is a history of the conversation so far, and a new question asked by the user that needs to be answered by searching in a knowledge base.
         You have access to Azure AI Search index with some documents.
         Generate a search query based on the conversation and the new question.
@@ -107,9 +94,12 @@ def main():
         Do not include any text inside [] or <<>> in the search query terms.
         Do not include any special characters like '+'.
         If you cannot generate a search query, return just the number 0.
-        """   
-    
-    query_resp_token_limit = 50 # max tokens to create optimized search query
+        """  
+    # define the prompt we'll use for the chatbot interacting with the user
+    system_message = """You are an assistant that summarizes document highlights retrieved from documents using Azure AI Search. You will receive the search query in double asterisks, for example, **eye exams**.
+        You should start all responses with "this is what I know about **search query**". For example, for search query **eye exams**, your response will start as "This is what I know about eye exams".
+        Your responses should be 3-4 sentences and should include all key details without adding external information or assumptions. 
+        """
     
     # define tools used to build messages to get optimized search query - see https://platform.openai.com/docs/api-reference/chat/create#chat-create-tools
     # this has good examples on how tools are used too: https://cookbook.openai.com/examples/how_to_call_functions_with_chat_models
@@ -133,10 +123,22 @@ def main():
             }
     ]
 
+    # define other variables used in getting chat responses
+    temperature = 0.3 # response creativity (0-2, 0 being entirely factual and literal)
+    query_resp_token_limit = 50 # max tokens to create optimized search query
+    max_tokens = 1000 # response token limit, for generating responses returned to user. 1 token ~= 4 characters
+    max_questions = 3 # max turns the conversation has before program exits
+    deployment_name = os.getenv("OAI_DEPLOYMENT")
+    model_name = os.getenv("MODEL_NAME")
+    
+    # get the token limit for the model we've deployed - see https://github.com/pamelafox/openai-messages-token-helper/blob/main/src/openai_messages_token_helper/model_helper.py
+    model_token_limit = get_token_limit(model=model_name)
+
+    # STEP 1) Facilitate a 3-turn conversation
     q = 0
     messages = []
     print("Welcome to the Contoso help chatbot!")
-    while q < max_questions: # STEP 1) Facilitate a 3-turn conversation
+    while q < max_questions:
 
         # Get prompt from user
         text = input('\nEnter a question:\n')
@@ -191,10 +193,10 @@ def main():
             system_prompt=system_message,
             past_messages=[] if q == 0 else messages[1:-1],
             new_user_content=f"**{query_text}**" + " ".join([e for d in docs for e in d.highlight["content"]]),
-            max_tokens=model_token_limit - 1024,
+            max_tokens=model_token_limit - max_tokens,
         )
     
-        # create and print response
+        # create and display response
         chat_reply = oai_client.chat.completions.create(
             model=deployment_name,
             messages=messages,

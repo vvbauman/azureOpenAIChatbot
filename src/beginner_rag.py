@@ -119,5 +119,3 @@ def main():
 if __name__ == '__main__': 
     main()
 
-# TODO: update improved_rag.py based on changes in this beginner_rag.py
-
